@@ -1,25 +1,19 @@
 const express = require('express');
 const prisma = require('../lib/prisma');
 const requireAuth = require('../middleware/auth');
+const { log } = require('../lib/logger');
 
 const router = express.Router();
-
-// All project routes require authentication
 router.use(requireAuth);
 
-// GET /projects — list all non-archived projects for the logged-in user
 router.get('/', async (req, res) => {
   const projects = await prisma.project.findMany({
-    where: {
-      ownerId: req.user.id,
-      isArchived: false,
-    },
+    where: { ownerId: req.user.id, isArchived: false },
     orderBy: { createdAt: 'desc' },
   });
   res.json(projects);
 });
 
-// POST /projects — create a new project
 router.post('/', async (req, res) => {
   const { name, description } = req.body;
 
@@ -33,35 +27,26 @@ router.post('/', async (req, res) => {
   }
 
   const project = await prisma.project.create({
-    data: {
-      name: name.trim(),
-      description: description || null,
-      ownerId: req.user.id,
-    },
+    data: { name: name.trim(), description: description || null, ownerId: req.user.id },
   });
+
+  log('Project created', { projectId: project.id, name: project.name, userId: req.user.id });
 
   res.status(201).json(project);
 });
 
-// GET /projects/:id — get a single project
 router.get('/:id', async (req, res) => {
   const project = await prisma.project.findUnique({
     where: { id: parseInt(req.params.id) },
     include: { issues: true },
   });
 
-  if (!project) {
-    return res.status(404).json({ error: 'Project not found' });
-  }
-
-  if (project.ownerId !== req.user.id) {
-    return res.status(403).json({ error: 'Access denied' });
-  }
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  if (project.ownerId !== req.user.id) return res.status(403).json({ error: 'Access denied' });
 
   res.json(project);
 });
 
-// PATCH /projects/:id — edit name or archive
 router.patch('/:id', async (req, res) => {
   const { name, isArchived } = req.body;
 
@@ -69,14 +54,8 @@ router.patch('/:id', async (req, res) => {
     where: { id: parseInt(req.params.id) },
   });
 
-  if (!project) {
-    return res.status(404).json({ error: 'Project not found' });
-  }
-
-  if (project.ownerId !== req.user.id) {
-    return res.status(403).json({ error: 'Access denied' });
-  }
-
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  if (project.ownerId !== req.user.id) return res.status(403).json({ error: 'Access denied' });
   if (name !== undefined && name.trim() === '') {
     return res.status(400).json({ error: 'Project name cannot be empty' });
   }
@@ -88,6 +67,12 @@ router.patch('/:id', async (req, res) => {
       ...(isArchived !== undefined && { isArchived }),
     },
   });
+
+  if (isArchived === true) {
+    log('Project archived', { projectId: updated.id, name: updated.name, userId: req.user.id });
+  } else if (name !== undefined) {
+    log('Project updated', { projectId: updated.id, name: updated.name, userId: req.user.id });
+  }
 
   res.json(updated);
 });

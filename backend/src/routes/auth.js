@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const prisma = require('../lib/prisma');
+const { log } = require('../lib/logger');
 
 const router = express.Router();
 
@@ -14,11 +15,9 @@ router.post('/register', async (req, res) => {
   if (!name || !email || !password) {
     return res.status(400).json({ error: 'Name, email, and password are required' });
   }
-
   if (!EMAIL_REGEX.test(email)) {
     return res.status(400).json({ error: 'Invalid email format' });
   }
-
   if (password.length < MIN_PASSWORD_LENGTH) {
     return res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
   }
@@ -29,10 +28,11 @@ router.post('/register', async (req, res) => {
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
-
   const user = await prisma.user.create({
     data: { name, email, passwordHash },
   });
+
+  log('User registered', { userId: user.id, email: user.email });
 
   res.status(201).json({
     id: user.id,
@@ -50,8 +50,6 @@ router.post('/login', async (req, res) => {
   }
 
   const user = await prisma.user.findUnique({ where: { email } });
-
-  // Same error for "no user" and "wrong password" — don't reveal which one failed
   if (!user) {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
@@ -67,13 +65,11 @@ router.post('/login', async (req, res) => {
     { expiresIn: '7d' }
   );
 
+  log('User logged in', { userId: user.id, email: user.email });
+
   res.json({
     token,
-    user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-    },
+    user: { id: user.id, name: user.name, email: user.email },
   });
 });
 
